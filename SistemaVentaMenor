@@ -1,0 +1,310 @@
+import mysql.connector
+import datetime
+import mysql.connector
+from mysql.connector import errorcode
+import sys
+
+# Configuración de la conexión a la base de datos
+conexion = mysql.connector.connect(
+host= "localhost",
+user="admin",
+password="admin",
+database=""
+)
+
+#Creo cursos para ejecutar consultas SQL
+cursor = conexion.cursor()
+
+#Creación de las tablas en la base de datos
+TABLES = {}
+TABLES['productos'] = (
+    "CREATE TABLE `productos` ("
+    "  `id` int(11) NOT NULL AUTO_INCREMENT,"
+    "  `clave` varchar(10) NOT NULL,"
+    "  `nombre` varchar(255) NOT NULL,"
+    "  PRIMARY KEY (`id`)"
+    ") ENGINE=InnoDB")
+
+TABLES['compras'] = (
+    "CREATE TABLE `compras` ("
+    "  `id` int(11) NOT NULL AUTO_INCREMENT,"
+    "  `cantidad` int(11) NOT NULL,"
+    "  `clave` varchar(10) NOT NULL,"
+    "  `nombre` varchar(255) NOT NULL,"
+    "  `precio_compra` decimal(10,2) NOT NULL,"
+    "  `total` decimal(10,2) NOT NULL,"
+    "  `fecha` date NOT NULL,"
+    "  PRIMARY KEY (`id`)"
+    ") ENGINE=InnoDB")
+
+TABLES['ventas'] = (
+    "CREATE TABLE `ventas` ("
+    "  `id` int(11) NOT NULL AUTO_INCREMENT,"
+    "  `cantidad` int(11) NOT NULL,"
+    "  `clave` varchar(10) NOT NULL,"
+    "  `nombre` varchar(255) NOT NULL,"
+    "  `precio_venta` decimal(10,2) NOT NULL,"
+    "  `total` decimal(10,2) NOT NULL,"
+    "  `fecha` date NOT NULL,"
+    "  PRIMARY KEY (`id`)"
+    ") ENGINE=InnoDB")
+
+TABLES['inventarios'] = (
+    "CREATE TABLE `inventarios` ("
+    "  `id` int(11) NOT NULL AUTO_INCREMENT,"
+    "  `clave` varchar(10) NOT NULL,"
+    "  `cantidad` int(11) NOT NULL,"
+    "  PRIMARY KEY (`id`)"
+    ") ENGINE=InnoDB")
+
+cnx = mysql.connector.connect(**conexion)
+cursor = cnx.cursor()
+
+for name, ddl in TABLES.items():
+    try:
+        print("Creando la tabla {}: ".format(name), end='')
+        cursor.execute(ddl)
+    except mysql.connector.Error as err:
+        if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
+            print("La tabla ya existe.")
+        else:
+            print(err.msg)
+    else:
+        print("¡Tabla creada con éxito!")
+
+# Pantalla de alta de productos
+cnx = mysql.connector.connect(**conexion)
+cursor = cnx.cursor()
+
+for name, ddl in TABLES.items():
+    try:
+        print("Creando la tabla {}: ".format(name), end='')
+        cursor.execute(ddl)
+    except mysql.connector.Error as err:
+        if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
+            print("La tabla ya existe.")
+        else:
+            print(err.msg)
+    else:
+        print("¡Tabla creada con éxito!")
+
+#Pantalla de alta de productos
+def alta_producto():
+    clave = input("Ingrese la clave del producto: ")
+    nombre = input("Ingrese el nombre del producto: ")
+
+    # Agregar el producto a la tabla de productos
+    add_producto = ("INSERT INTO productos "
+                    "(clave, nombre) "
+                    "VALUES (%s, %s)")
+    data_producto = (clave, nombre)
+    cursor.execute(add_producto, data_producto)
+    cnx.commit()
+
+    # Agregar el producto a la tabla de inventarios
+    add_inventario = ("INSERT INTO inventarios "
+                      "(clave, cantidad) "
+                      "VALUES (%s, %s)")
+    data_inventario = (clave, 0)
+    cursor.execute(add_inventario, data_inventario)
+    cnx.commit()
+
+    print("Producto agregado con éxito.")
+# Pantalla de compras del producto
+def compra_producto():
+    clave = input("Ingrese la clave del producto: ")
+    cantidad = int(input("Ingrese la cantidad comprada: "))
+    precio_compra = float(input("Ingrese el precio de compra: "))
+    total = cantidad * precio_compra
+    fecha = input("Ingrese la fecha de la compra (YYYY-MM-DD): ")
+
+    # Actualizar la cantidad en la tabla de inventarios
+    update_inventario = ("UPDATE inventarios "
+                         "SET cantidad = cantidad + %s "
+                         "WHERE clave = %s")
+    data_inventario = (cantidad, clave)
+    cursor.execute(update_inventario, data_inventario)
+    cnx.comit()
+
+# Agregar la compra a la tabla de compras
+    add_compra = ("INSERT INTO compras "
+                  "(cantidad, clave, nombre, precio_compra, total, fecha) "
+                  "VALUES (%s, %s, %s, %s, %s, %s)")
+    data_compra = (cantidad, clave, get_nombre_producto(clave), precio_compra, total, fecha)
+    cursor.execute(add_compra, data_compra)
+    cnx.commit()
+
+    print("Compra agregada con éxito.")
+
+    # Pantalla de ventas del producto
+def venta_producto():
+    clave = input("Ingrese la clave del producto: ")
+    cantidad = int(input("Ingrese la cantidad vendida: "))
+    precio_venta = float(input("Ingrese el precio de venta: "))
+    total = cantidad * precio_venta
+    fecha = input("Ingrese la fecha de la venta (YYYY-MM-DD): ")
+
+    # Verificar que haya suficientes productos en el inventario
+    inventario_suficiente = verificar_inventario(clave, cantidad)
+    if not inventario_suficiente:
+        print("No hay suficientes productos en el inventario.")
+        return
+
+# Actualizar la cantidad en la tabla de inventarios
+    update_inventario = ("UPDATE inventarios "
+                         "SET cantidad = cantidad - %s "
+                         "WHERE clave = %s")
+    data_inventario = (cantidad, clave)
+    cursor.execute(update_inventario, data_inventario)
+    cnx.commit()
+
+    # Agregar la venta a la tabla de ventas
+    add_venta = ("INSERT INTO ventas "
+                 "(cantidad, clave, nombre, precio_venta, total, fecha) "
+                 "VALUES (%s, %s, %s, %s, %s, %s)")
+    data_venta = (cantidad, clave, get_nombre_producto(clave), precio_venta, total, fecha)
+    cursor.execute(add_venta, data_venta)
+    cnx.commit()
+
+    print("Venta agregada con éxito.")
+
+# Función para obtener el nombre de un producto a partir de su clave
+def get_nombre_producto(clave):
+    query = ("SELECT nombre FROM productos WHERE clave = %s")
+    data = (clave,)
+    cursor.execute(query, data)
+    result = cursor.fetchone()
+    if result:
+        return result[0]
+    else:
+        return None
+
+#Funcion para agregar un producto a la base de datos
+# Función para agregar un producto a la base de datos
+def agregar_producto(clave, nombre):
+    query = ("INSERT INTO productos (clave, nombre) VALUES (%s, %s)")
+    data = (clave, nombre)
+    cursor.execute(query, data)
+    conexion.commit()
+    
+
+# Función para verificar si hay suficientes productos en el inventario
+def verificar_inventario(clave, cantidad):
+    query = ("SELECT cantidad FROM inventarios WHERE clave = %s")
+    data = (clave,)
+    cursor.execute(query, data)
+    result = cursor.fetchone()
+    if result and result[0] >= cantidad:
+        return True
+    else:
+        return None
+
+#Función para verificar si hay suficientes productos en el inventario
+def verificar_inventario(clave, cantidad):
+    query = ("SELECT cantidad FROM inventarios WHERE clave = %s")
+    data = (clave,)
+    cursor.execute(query, data)
+    result = cursor.fetchone()
+    if result and result[0] >= cantidad:
+        return True
+    else:
+        return False
+
+# Pantalla de inventarios de los productos
+def mostrar_inventarios():
+    query = ("SELECT clave, cantidad FROM inventarios")
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    print("Inventarios:")
+    for row in result:
+        print(row[0], row[1])
+
+# Pantalla de total de ventas por artículo
+def mostrar_total_ventas():
+    query = ("SELECT clave, SUM(total) AS total_ventas FROM ventas GROUP BY clave")
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    print("Total de ventas por artículo:")
+    for row in result:
+        print(row[0], [1])
+
+#Pantalla de alta de producto
+def pantalla_alta_producto():
+    print("== Alta de Producto ==")
+    clave = input("Ingrese la clave del producto: ")
+    nombre = input("Ingrese el nombre del producto: ")
+    agregar_producto(clave, nombre)
+
+def registrar_compra(clave, nombre, cantidad, precio, total, fecha):
+    query = ("INSERT INTO compras (clave, nombre, cantidad, precio, total, fecha) VALUES (%s, %s, %s, %s, %s, %s)")
+    data = (clave, nombre, cantidad, precio, total, fecha)
+    cursor.execute(query, data)
+    conexion.commit()
+
+def actualizar_inventario(clave, cantidad):
+    query = ("UPDATE inventario SET cantidad = cantidad + %s WHERE clave = %s")
+    data = (cantidad, clave)
+    cursor.execute(query, data)
+    conexion.commit()
+
+def registrar_venta(clave, nombre, cantidad, precio, total, fecha):
+    query = ("INSERT INTO ventas (clave, nombre, cantidad, precio, total, fecha) VALUES (%s, %s, %s, %s, %s, %s)")
+    data = (clave, nombre, cantidad, precio, total, fecha)
+    cursor.execute(query, data)
+    conexion.commit()
+
+#Pantalla de compras del producto
+def pantalla_compras():
+    print("== Compras de Producto ==")
+    clave = input("Ingrese la clave del producto: ")
+    nombre = get_nombre_producto(clave)
+    if nombre is not None:
+        cantidad = int(input("Ingrese la cantidad comprada: "))
+        precio = float(input("Ingrese el precio de compra: "))
+        total = cantidad * precio
+        fecha = datetime.now()
+        registrar_compra(clave, nombre, cantidad, precio, total, fecha)
+        actualizar_inventario(clave, cantidad)
+        print("Compra registrada exitosamente.")
+    else:
+        print("No se encontró ningún producto con la clave especificada.")
+
+# Pantalla de ventas
+def pantalla_ventas():
+    print("== Ventas de Producto ==")
+    clave = input("Ingrese la clave del producto: ")
+    nombre = get_nombre_producto(clave)
+    if nombre is not None:
+        cantidad = int(input("Ingrese la cantidad vendida: "))
+        precio = float(input("Ingrese el precio de venta: "))
+        total = cantidad * precio
+        fecha = datetime.now()
+        registrar_venta(clave, nombre, cantidad, precio, total, fecha)
+        actualizar_inventario(clave, -cantidad)
+        print("Venta registrada exitosamente.")
+    else:
+        print("No se encontró ningún producto con la clave especificada.")
+
+# Pantalla de inventario
+def pantalla_inventario():
+    print("== Inventario de Productos ==")
+    query = "SELECT * FROM inventarios"
+    cursor.execute(query)
+    inventarios = cursor.fetchall()
+    print("{:<10} {:<10}".format("Clave", "Cantidad"))
+    for inventario in inventarios:
+        print("{:<10} {:<10}".format(inventario[0], inventario[1]))
+
+# Pantalla de total de ventas por artículo
+def pantalla_total_ventas():
+    print("== Total de Ventas por Artículo ==")
+    query = ("SELECT clave_producto, SUM(total) as gran_total "
+             "FROM ventas "
+             "GROUP BY clave_producto")
+    cursor.execute(query)
+    ventas = cursor.fetchall()
+    print("{:<10} {:<10}".format("Clave", "Gran Total"))
+    for venta in ventas:
+        print("{:<10} {:<10.2f}".format(venta[0], venta[1]))
